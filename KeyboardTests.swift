@@ -369,8 +369,8 @@ func renderKeyboardUI(to directory: String) throws {
     if let button = delegate.item?.button {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
         button.layoutSubtreeIfNeeded()
-        precondition(delegate.warningBadge.superview === button && !delegate.warningBadge.isHidden)
-        precondition(button.bounds.contains(delegate.warningBadge.frame), "Warning badge must fit inside the menu-bar button")
+        featureCheck(delegate.warningBadge.superview === button && !delegate.warningBadge.isHidden)
+        featureCheck(button.bounds.contains(delegate.warningBadge.frame), "Warning badge must fit inside the menu-bar button")
         if let bitmap = button.bitmapImageRepForCachingDisplay(in: button.bounds) {
             button.cacheDisplay(in: button.bounds, to: bitmap)
             try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("menubar-warning.png"))
@@ -395,34 +395,39 @@ func renderKeyboardUI(to directory: String) throws {
         settings.window.appearance = NSAppearance(named: appearance)
         for tab in 0..<4 {
             delegate.tabButtons[tab].performClick(nil)
-            precondition(delegate.selectedTab == tab && !delegate.tabPanels[tab].isHidden)
-            precondition(delegate.tabPanels.filter { !$0.isHidden }.count == 1)
+            featureCheck(delegate.selectedTab == tab && !delegate.tabPanels[tab].isHidden)
+            featureCheck(delegate.tabPanels.filter { !$0.isHidden }.count == 1)
             try save(delegate.window.contentView!, "tab-\(tab)-\(name).png")
         }
         delegate.selectTab(0)
         try save(delegate.window.contentView!, "settings-\(name).png")
         try save(settings.window.contentView!, "keyboards-\(name).png")
+        if delegate.remoteWindow == nil { delegate.buildRemoteWindow() }
+        delegate.remoteWindow?.appearance = NSAppearance(named: appearance)
+        delegate.refreshRemoteStatus()
+        delegate.remoteDiagnostic.stringValue = "수신: 코드 61, 종류 12, flags 0x80040\n확인 종료 — 다시 확인하려면 버튼을 누르세요."
+        try save(delegate.remoteWindow!.contentView!, "remote-\(name).png")
     }
-    precondition(delegate.tabButtons[3].contentTintColor == .controlAccentColor && delegate.tabButtons[0].contentTintColor == .controlAccentColor)
-    precondition(delegate.tabButtons[1].contentTintColor == .secondaryLabelColor)
+    featureCheck(delegate.tabButtons[3].contentTintColor == (delegate.sourceBuild ? .secondaryLabelColor : .controlAccentColor) && delegate.tabButtons[0].contentTintColor == .controlAccentColor)
+    featureCheck(delegate.tabButtons[1].contentTintColor == .secondaryLabelColor)
     let updateEntry = delegate.item!.menu!.items[1]
-    precondition(updateEntry.action == #selector(AppDelegate.showAbout) && !updateEntry.isHidden)
+    featureCheck(updateEntry.action == #selector(AppDelegate.showAbout) && updateEntry.isHidden == delegate.sourceBuild)
     delegate.showAbout()
-    precondition(delegate.selectedTab == 3 && !delegate.updateButton.isHidden)
-    precondition(!delegate.updateSummary.string.contains("요약에 나타나면"))
+    featureCheck(delegate.selectedTab == 3 && delegate.updateButton.isHidden == delegate.sourceBuild)
+    featureCheck(!delegate.updateSummary.string.contains("요약에 나타나면"))
     delegate.updates = UpdateChecker(defaults: defaults, installedVersion: "9.0.0")
     delegate.refreshUpdates()
-    precondition(delegate.tabButtons[3].accessibilityLabel() == "gksdud 탭" && delegate.updateButton.isHidden && updateEntry.isHidden)
+    featureCheck(delegate.tabButtons[3].accessibilityLabel() == "gksdud 탭" && delegate.updateButton.isHidden && updateEntry.isHidden)
     defaults.set(false, forKey: "active")
     delegate.resetSelection()
     for (title, usage): (String, UInt64) in [("우측 Command ⌘", 0x7000000e7), ("우측 Option ⌥", 0x7000000e6),
                                           ("Caps Lock ⇪", 0x700000039), ("우측 Control ⌃", 0x7000000e4)] {
         delegate.picker.selectItem(withTitle: title)
-        precondition(delegate.picker.sendAction(delegate.picker.action, to: delegate.picker.target))
-        precondition(engine.source == usage, "The selected label must save the matching HID key")
+        featureCheck(delegate.picker.sendAction(delegate.picker.action, to: delegate.picker.target))
+        featureCheck(engine.source == usage, "The selected label must save the matching HID key")
         delegate.picker.selectItem(at: 0)
         delegate.resetSelection()
-        precondition(delegate.picker.titleOfSelectedItem == title, "Saved key selection must be restored")
+        featureCheck(delegate.picker.titleOfSelectedItem == title, "Saved key selection must be restored")
     }
     delegate.selectTab(0)
     for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
@@ -433,32 +438,32 @@ func renderKeyboardUI(to directory: String) throws {
     for mode in [1, 2, 1] {
         // Exercise real checkbox actions with activation off so no live tap is installed.
         delegate.specialButtons[mode - 1].performClick(nil)
-        precondition(delegate.specialMode.rawValue == mode)
-        precondition(delegate.specialButtons.map(\.state) == (mode == 1 ? [.on, .off] : [.off, .on]))
+        featureCheck(delegate.specialMode.rawValue == mode)
+        featureCheck(delegate.specialButtons.map(\.state) == (mode == 1 ? [.on, .off] : [.off, .on]))
     }
     delegate.specialButtons[0].performClick(nil)
-    precondition(delegate.specialMode == .none && delegate.specialButtons.allSatisfy { $0.state == .off })
+    featureCheck(delegate.specialMode == .none && delegate.specialButtons.allSatisfy { $0.state == .off })
     delegate.selectTab(0)
     func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
     let ui = descendants(settings.window.contentView!)
     let toggle = ui.compactMap { $0 as? NSSegmentedControl }.first { $0.segmentCount == 2 }!
     toggle.selectedSegment = 0; _ = toggle.sendAction(toggle.action, to: toggle.target)
-    precondition(!engine.keyboards.defaultEnabled)
+    featureCheck(!engine.keyboards.defaultEnabled)
     let segments = ui.compactMap { $0 as? NSSegmentedControl }.filter { $0.segmentCount == 3 }
     let virtualControl = segments[1]
     virtualControl.selectedSegment = 0
     _ = virtualControl.sendAction(virtualControl.action, to: virtualControl.target)
-    precondition(engine.keyboards.known[virtual.identity.key]?.mode == .off)
-    precondition(engine.keyboards.warning == nil && delegate.keyboardWarningRow.isHidden && delegate.warningBadge.isHidden)
-    precondition(virtualControl.superview != nil, "Mode changes must preserve the focused native control")
+    featureCheck(engine.keyboards.known[virtual.identity.key]?.mode == .off)
+    featureCheck(engine.keyboards.warning == nil && delegate.keyboardWarningRow.isHidden && delegate.warningBadge.isHidden)
+    featureCheck(virtualControl.superview != nil, "Mode changes must preserve the focused native control")
     let detachedControl = segments[2]
     detachedControl.selectedSegment = 2
     _ = detachedControl.sendAction(detachedControl.action, to: detachedControl.target)
-    precondition(engine.keyboards.known[disconnected.identity.key]?.mode == .on, "Disconnected rows remain editable")
+    featureCheck(engine.keyboards.known[disconnected.identity.key]?.mode == .on, "Disconnected rows remain editable")
     devices.append(disconnected)
     _ = engine.keyboards.reconcile(source: sources[0], target: f19, active: true)
     settings.refresh()
-    precondition(disconnected.mappings.contains { $0[srcKey]?.uint64Value == sources[0] && $0[dstKey]?.uint64Value == f19 })
+    featureCheck(disconnected.mappings.contains { $0[srcKey]?.uint64Value == sources[0] && $0[dstKey]?.uint64Value == f19 })
     delegate.refreshKeyboardState()
     delegate.window.appearance = NSAppearance(named: .aqua)
     try save(delegate.window.contentView!, "settings-recovered.png")

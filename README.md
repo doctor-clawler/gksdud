@@ -1,5 +1,16 @@
 # gksdud - 씹힘 없고 빠릿빠릿한 Mac 한영 전환
 
+> 이 저장소는 [codingnoye/gksdud](https://github.com/codingnoye/gksdud)의 원격 입력 지원 포크입니다.
+> NoMachine에서 Windows 한영키를 사용하는 방법은 **[Windows/NoMachine 설정 가이드](docs/nomachine-windows.md)**를 보세요.
+> 이 포크는 소스에서 빌드하며, 원본 릴리스로 덮어쓰지 않도록 앱 내 업데이트 확인·설치를 비활성화했습니다. 아래 Homebrew/릴리스 설치는 원본 앱입니다.
+
+```sh
+GKSDUD_SIGN_MODE=ad-hoc bash build.sh
+```
+
+빌드가 완료되면 마지막에 표시되는 `Built app:` 경로의 앱을 사용하세요. 빌드 교체 후 접근성 권한을 다시 승인해야 할 수 있습니다.
+
+
 <img width="99" height="109" alt="스크린샷 2026-09-16 오후 11 39 46" src="https://github.com/user-attachments/assets/44f53a4b-4490-475c-80b4-f3fd3b5a8ca8" />
 
 `Karabiner`도, 복잡한 설정도 없이

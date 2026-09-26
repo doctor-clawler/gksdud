@@ -108,7 +108,8 @@ extension AppDelegate {
         row("내부 전환 키", [targetPicker], in: general)
         hint("시스템의 '이전 입력 소스 선택' 단축키의 값을 변경합니다.\n다른 앱과 겹치지 않는, 기능 없는 키를 골라주세요.", in: general)
         let keyboards = NSButton(title: "대상 키보드 설정", target: self, action: #selector(showKeyboardSettings)); keyboards.bezelStyle = .rounded
-        general.addArrangedSubview(keyboards)
+        let remote = NSButton(title: "원격 입력 설정", target: self, action: #selector(showRemoteSettings)); remote.bezelStyle = .rounded
+        general.addArrangedSubview(NSStackView(views: [keyboards, remote]))
         separator(in: general)
         login.target = self; login.action = #selector(toggleLogin)
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -205,12 +206,12 @@ extension AppDelegate {
         selectedTab = index
         for (i, panel) in tabPanels.enumerated() {
             panel.isHidden = i != index; tabButtons[i].state = i == index ? .on : .off
-            tabButtons[i].contentTintColor = i == index || (i == 3 && updates.available != nil) ? .controlAccentColor : .secondaryLabelColor
+            tabButtons[i].contentTintColor = i == index || (i == 3 && !sourceBuild && updates.available != nil) ? .controlAccentColor : .secondaryLabelColor
         }
     }
     @objc func showAbout() { showSettings(); selectTab(3) }
-    @objc func checkForUpdates() { installer.clearStatus(); updates.check(force: true) }
-    @objc func performUpdate() { if let release = updates.available { installer.start(release) } }
+    @objc func checkForUpdates() { guard !sourceBuild else { return }; installer.clearStatus(); updates.check(force: true) }
+    @objc func performUpdate() { guard !sourceBuild else { return }; if let release = updates.available { installer.start(release) } }
     func installPreparedUpdate(_ prepared: PreparedUpdate) {
         do {
             guard !engine.isUpdatingSettings else { throw UpdateFailure("설정을 적용하고 있습니다. 잠시 후 다시 시도해주세요.") }
@@ -233,7 +234,7 @@ extension AppDelegate {
     @objc func openSupport() { if let url = supportURL { NSWorkspace.shared.open(url) } }
     @objc func openProject() { NSWorkspace.shared.open(URL(string: "https://github.com/codingnoye/gksdud")!) }
     func refreshUpdates() {
-        let release = updates.available
+        let release = sourceBuild ? nil : updates.available
         tabButtons.last?.image = release == nil ? tabGlyph("?") : updateGlyph(NSSize(width: 24, height: 20), color: .controlAccentColor)
         selectTab(selectedTab)
         tabButtons.last?.setAccessibilityLabel(release == nil ? "gksdud 탭" : "gksdud 탭, 업데이트 가능")
@@ -244,8 +245,9 @@ extension AppDelegate {
         updateScroll.isHidden = release == nil
         updateButton.isHidden = release == nil
         updateButton.isEnabled = !installer.busy
-        checkUpdateButton.isEnabled = !updates.checking && !installer.busy
-        if !installer.status.isEmpty { updateStatus.stringValue = installer.status }
+        checkUpdateButton.isEnabled = !sourceBuild && !updates.checking && !installer.busy
+        if sourceBuild { updateStatus.stringValue = "원격 입력 지원 포크 · 소스 빌드\n업데이트는 포크에서 직접 빌드하세요." }
+        else if !installer.status.isEmpty { updateStatus.stringValue = installer.status }
         else if updates.checking { updateStatus.stringValue = "업데이트 확인 중…" }
         else if let error = updates.error { updateStatus.stringValue = error }
         else if let date = updates.lastChecked {

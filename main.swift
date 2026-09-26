@@ -358,6 +358,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     var preparedToRelaunch = false
     lazy var optionInput = makeOptionInput()
     lazy var updates = UpdateChecker(defaults: engine.defaults)
+    var sourceBuild: Bool { Bundle.main.object(forInfoDictionaryKey: "GKSDUDSourceBuild") as? Bool ?? false }
     var updateTimer: Timer?
     var tabButtons: [NSButton] = []
     var tabPanels: [NSStackView] = []
@@ -397,6 +398,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     var timer: Timer?
     var menuInputTimer: Timer?
     var observers: [NSObjectProtocol] = []
+    var remoteWindow: NSWindow?
+    let remoteSwitch = NSButton(checkboxWithTitle: "이벤트 기반 전환 사용", target: nil, action: nil)
+    let remotePicker = NSPopUpButton()
+    let remoteState = NSTextField(wrappingLabelWithString: "")
+    let remoteDiagnostic = NSTextField(wrappingLabelWithString: "")
+    var remoteGate = RemoteKeyGate()
+    var remoteHeldTarget: CGKeyCode?
+    var remoteReceived = 0
+    var remoteProbeUntil = Date.distantPast
+    var remoteLastEvent = ""
+    let remoteMarker = Int64.random(in: Int64.min ... -1)
     var keyTap: CFMachPort?
     var keyTapSource: CFRunLoopSource?
     var pressGate = PressGate()
@@ -464,6 +476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         togglePressSwitch()
     }
     func stopKeyTap() {
+        releaseRemoteKey()
         optionInput.cancel()
         cancelCapsRestore()
         englishCaps.reset()
@@ -478,19 +491,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if let tap = keyTap, !CFMachPortIsValid(tap) { stopKeyTap() }
         syncCapsPreservation()
         if !engine.active || !engine.longPressCapsLock { cancelLongPress() }
-        guard engine.active, engine.switchOnKeyDown || engine.longPressCapsLock || engine.preserveCapsLock || specialMode != .none, keyTap == nil else { updatePressAccess(); return }
+        guard engine.active, engine.remoteEnabled || (remoteWindow?.isVisible == true && Date() < remoteProbeUntil) || engine.switchOnKeyDown || engine.longPressCapsLock || engine.preserveCapsLock || specialMode != .none, keyTap == nil else { updatePressAccess(); return }
         let mask = (CGEventMask(1) << CGEventType.keyDown.rawValue) | (CGEventMask(1) << CGEventType.keyUp.rawValue) | (CGEventMask(1) << CGEventType.flagsChanged.rawValue) | (CGEventMask(1) << CGEventType.leftMouseDown.rawValue) | (CGEventMask(1) << CGEventType.rightMouseDown.rawValue) | (CGEventMask(1) << CGEventType.otherMouseDown.rawValue)
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: mask, callback: { _, type, event, info in
                 guard let info else { return Unmanaged.passUnretained(event) }
                 let owner = Unmanaged<AppDelegate>.fromOpaque(info).takeUnretainedValue()
                 if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                    owner.releaseRemoteKey()
                     owner.cancelLongPress()
                     owner.optionInput.cancel()
                     // Retain owned physical key-ups to avoid an extra native release.
                     if let tap = owner.keyTap { CGEvent.tapEnable(tap: tap, enable: true) }
                     return Unmanaged.passUnretained(event)
                 }
+                if owner.handleRemoteInput(event) { return nil }
                 if owner.optionInput.handle(event, mode: owner.specialMode, active: owner.engine.active) { return nil }
                 if type == .flagsChanged {
                     if owner.capsPreservationActive && event.getIntegerValueField(.keyboardEventKeycode) == 57 {
@@ -720,8 +735,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         updates.onChange = { [weak self] in self?.refreshUpdates() }
         installer.onChange = { [weak self] in self?.refreshUpdates() }
         installer.onReady = { [weak self] prepared in self?.installPreparedUpdate(prepared) }
-        updates.check()
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in self?.updates.check() }
+        if !sourceBuild { updates.check() }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in if self?.sourceBuild == false { self?.updates.check() } }
         updateTimer?.tolerance = 60
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(inputSourceChanged), name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil)
         let center = NSWorkspace.shared.notificationCenter
@@ -741,9 +756,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             }
         })
         observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.optionInput.cancel(focusChanged: true)
+            self?.releaseRemoteKey(); self?.optionInput.cancel(focusChanged: true)
         })
-        observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.optionInput.cancel() })
+        observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.releaseRemoteKey(); self?.optionInput.cancel() })
         for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.recover() })
         }
@@ -806,7 +821,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let updateEntry = NSMenuItem(title: "업데이트 가능", action: #selector(showAbout), keyEquivalent: "")
         updateEntry.target = self
         updateEntry.image = updateGlyph(NSSize(width: 22, height: 20))
-        updateEntry.isHidden = updates.available == nil
+        updateEntry.isHidden = sourceBuild || updates.available == nil
         menu.addItem(updateEntry)
         menu.addItem(NSMenuItem.separator())
         let koreanEntry = menu.addItem(withTitle: "한국어", action: #selector(selectKorean), keyEquivalent: "")
@@ -970,6 +985,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
     @objc func selectionChanged() {
         guard !engine.isUpdatingSettings else { resetSelection(); return }
+        releaseRemoteKey()
         cancelLongPress()
         if enabled.state == .on { applyNow() }
         else {
@@ -996,26 +1012,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         do { _ = try engine.apply(source: source, target: target); lastError = ""; stickyError = ""; repairFailed = false; ensureKeyTap(); refreshStatus() } catch { report(error); resetSelection() }
     }
     func restoreNow() {
+        releaseRemoteKey()
         optionInput.cancel()
         guard !engine.isUpdatingSettings else { return }
         cancelLongPress()
         do { try engine.restore(); lastError = ""; stickyError = ""; repairFailed = false; refreshStatus() } catch { report(error) }
         resetSelection(); syncCapsPreservation(); updatePressAccess(); refreshKeyboardState()
     }
-    func recover() { optionInput.cancel(); cancelCapsRestore(); englishCaps.switching = false; cancelLongPress(); longPress = LongPressState(); pressGate.held.removeAll(); for delay in [0.5, 2.0, 5.0] { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.repair() } } }
+    func recover() { releaseRemoteKey(); optionInput.cancel(); cancelCapsRestore(); englishCaps.switching = false; cancelLongPress(); longPress = LongPressState(); pressGate.held.removeAll(); for delay in [0.5, 2.0, 5.0] { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.repair() } } }
     func repair() {
         guard !engine.isUpdatingSettings else { return }
         ensureKeyTap()
         do { try engine.repair(); if repairFailed { repairFailed = false; stickyError = "" } } catch { report(error); repairFailed = !(error is KeyboardError) }
         if engine.keyboards.result.pending == 0 { lastError = "" }
-        refreshStatus(); refreshKeyboardState()
+        refreshStatus(); refreshKeyboardState(); refreshRemoteStatus()
     }
     // Only conditions the user must act on; each stays until it is resolved.
     func refreshStatus() {
         let result = engine.keyboards.result
         status.stringValue = result.pending > 0 ? "키보드 설정을 다시 적용하고 있습니다."
             : !stickyError.isEmpty ? stickyError
-            : engine.active && result.selected == 0 ? "적용할 키보드 연결 대기 중"
+            : engine.active && result.selected == 0 ? (engine.remoteEnabled ? (AXIsProcessTrusted() ? "HID 키보드 없음 · 이벤트 기반 전환 사용 중" : "이벤트 기반 전환에 접근성 권한이 필요합니다.") : "HID 키보드 연결 대기 · 원격 입력 설정 사용 가능")
             : window.isVisible && login.state == .on && SMAppService.mainApp.status == .requiresApproval ? "시스템 설정 → 로그인 항목에서 gksdud를 허용하세요." : ""
     }
     var lastError = ""
@@ -1058,6 +1075,7 @@ if CommandLine.arguments.dropFirst().first == "--install-update" {
     do { try runSettingsReentrancyTests() } catch { fputs("Settings reentrancy tests failed: \(error)\n", stderr); exit(1) }
     do { try runShortcutRestoreTests() } catch { fputs("Shortcut tests failed: \(error)\n", stderr); exit(1) }
     runFeatureTests()
+    runRemoteInputTests()
     runKeyboardTests()
     runRightControlTests()
     for initial in [false, true] {

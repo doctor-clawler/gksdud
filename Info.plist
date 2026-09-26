@@ -11,6 +11,7 @@
 <key>CFBundleVersion</key><string>38</string>
 <key>NSHumanReadableCopyright</key><string>© 2026 CodingNoye · codingnoye@gmail.com</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>GKSDUDSourceBuild</key><true/>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
