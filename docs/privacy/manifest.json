@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "contract": "https://github.com/WithClawler/_ops/blob/feat/ops-v2-safe-supervision/docs/privacy/contract.md",
+  "app": {
+    "id": "gksdud",
+    "source_path": "/Volumes/BigHugeMemory/works/gksdud",
+    "branch": "main",
+    "reviewed_head": "9f19bb7751ca53dd277401e3973c82425b499e11",
+    "repository": "git@github.com:doctor-clawler/gksdud.git",
+    "controller": "unknown unless app-specific operator evidence confirms Mib Studio"
+  },
+  "review_status": "unreviewed",
+  "release_ready": false,
+  "flows": [],
+  "unresolved": [
+    "First-party SDK/permission signals require call-path, final artifact and live processing review.",
+    "Target age, legal basis, provider regions/retention and public policy/store correspondence are not established by enrollment."
+  ]
+}
